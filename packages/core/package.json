@@ -1,0 +1,63 @@
+{
+  "name": "@nabwin/paisa",
+  "version": "0.1.0",
+  "description": "Nepali payment gateway SDK (paisa) — eSewa, Khalti, and more",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./esewa": {
+      "import": {
+        "types": "./dist/esewa/index.d.ts",
+        "default": "./dist/esewa/index.js"
+      },
+      "require": {
+        "types": "./dist/esewa/index.d.cts",
+        "default": "./dist/esewa/index.cjs"
+      }
+    },
+    "./khalti": {
+      "import": {
+        "types": "./dist/khalti/index.d.ts",
+        "default": "./dist/khalti/index.js"
+      },
+      "require": {
+        "types": "./dist/khalti/index.d.cts",
+        "default": "./dist/khalti/index.cjs"
+      }
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "tsup": "*",
+    "typescript": "*"
+  },
+  "keywords": ["nepal", "paisa", "payment", "esewa", "khalti", "gateway", "sdk"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nabwin/paisa",
+    "directory": "packages/core"
+  }
+}

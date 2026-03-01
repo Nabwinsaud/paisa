@@ -1,0 +1,22 @@
+{
+  "name": "nabwin-paisa-monorepo",
+  "private": true,
+  "packageManager": "bun@1.3.10",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@types/bun": "latest",
+    "@types/node": "^25.3.3",
+    "tsup": "^8.1.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  }
+}

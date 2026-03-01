@@ -1,0 +1,79 @@
+{
+  "name": "@nabwin/paisa-nestjs",
+  "version": "0.1.0",
+  "description": "NestJS adapter for @nabwin/paisa — eSewa, Khalti modules",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./esewa": {
+      "import": {
+        "types": "./dist/esewa/index.d.ts",
+        "default": "./dist/esewa/index.js"
+      },
+      "require": {
+        "types": "./dist/esewa/index.d.cts",
+        "default": "./dist/esewa/index.cjs"
+      }
+    },
+    "./khalti": {
+      "import": {
+        "types": "./dist/khalti/index.d.ts",
+        "default": "./dist/khalti/index.js"
+      },
+      "require": {
+        "types": "./dist/khalti/index.d.cts",
+        "default": "./dist/khalti/index.cjs"
+      }
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@nabwin/paisa": "workspace:*"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "reflect-metadata": "^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": { "optional": false },
+    "@nestjs/core": { "optional": false },
+    "reflect-metadata": { "optional": false }
+  },
+  "devDependencies": {
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
+    "reflect-metadata": "^0.2.0",
+    "tsup": "*",
+    "typescript": "*"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["nepal", "paisa", "payment", "esewa", "khalti", "nestjs", "module"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nabwin/paisa",
+    "directory": "packages/nestjs"
+  }
+}
