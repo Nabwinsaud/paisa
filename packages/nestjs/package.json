@@ -73,7 +73,7 @@
   "keywords": ["nepal", "paisa", "payment", "esewa", "khalti", "nestjs", "module"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/nabwin/paisa",
+    "url": "https://github.com/Nabwinsaud/paisa",
     "directory": "packages/nestjs"
   }
 }

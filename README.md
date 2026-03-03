@@ -4,7 +4,7 @@
 
 **Paisa** (पैसा) is the Nepali and South Asian word for **money**. If you have dealt with Nepali payment APIs, you have already seen it -- Khalti sends amounts in *paisa* (1 rupee = 100 paisa), eSewa returns `total_amount` strings you have to parse yourself. This SDK handles all of that so you don't have to.
 
-**@nabwin** is the npm scope under [nabwin](https://github.com/nabwin) -- the org publishing this package. The naming follows the pattern: `@org/thing`. So `@nabwin/paisa` means "nabwin's paisa library" -- a Nepali payment SDK by nabwin.
+**@nabwin** is the npm scope under [Nabwinsaud](https://github.com/Nabwinsaud) -- the developer publishing this package. The naming follows the pattern: `@org/thing`. So `@nabwin/paisa` means "nabwin's paisa library" -- a Nepali payment SDK by nabwin.
 
 ---
 
@@ -220,7 +220,7 @@ nabwin-paisa-monorepo/
 ### Setup
 
 ```bash
-git clone https://github.com/nabwin/paisa.git
+git clone https://github.com/Nabwinsaud/paisa.git
 cd paisa
 bun install
 ```
@@ -276,7 +276,7 @@ bun changeset publish      # Publish to npm
 
 Every Nepali payment API speaks in paisa. Khalti sends and receives amounts in paisa. eSewa returns amounts as strings you parse into paisa. This SDK is named after the thing every Nepali payment developer already thinks in.
 
-**@nabwin** -- the npm organization scope. [nabwin](https://github.com/nabwin) builds and maintains this SDK.
+**@nabwin** -- the npm organization scope. [Nabwinsaud](https://github.com/Nabwinsaud) builds and maintains this SDK.
 
 Together: **@nabwin/paisa** -- "nabwin's paisa library". A Nepali payment SDK that speaks your gateway's language.
 
