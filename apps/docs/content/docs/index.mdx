@@ -1,0 +1,51 @@
+---
+title: Introduction
+description: A type-safe Nepali payment gateway SDK
+---
+
+**@nabwin/paisa** is a lightweight, type-safe SDK for integrating Nepali payment gateways into your Node.js or Bun applications. It currently supports **eSewa** and **Khalti**, with more gateways (ConnectIPS, IME Pay, Fonepay) planned. A dedicated **NestJS** adapter package is also available.
+
+## Features
+
+- Full **TypeScript** support with strict types for every request and response
+- **eSewa** integration: form-based redirect, server-side initiation, payment verification, and transaction status checks
+- **Khalti** integration: payment initiation and verification with automatic NPR-to-paisa conversion
+- **NestJS** adapter with `forRoot` / `forRootAsync` dynamic modules
+- HMAC signature generation and verification built-in
+- Zero runtime dependencies beyond Node.js / Bun built-ins
+
+## Packages
+
+| Package | Description |
+| --- | --- |
+| [`@nabwin/paisa`](https://www.npmjs.com/package/@nabwin/paisa) | Core SDK with `EsewaClient` and `KhaltiClient` |
+| [`@nabwin/paisa-nestjs`](https://www.npmjs.com/package/@nabwin/paisa-nestjs) | NestJS adapter with `EsewaModule` and `KhaltiModule` |
+
+## Quick Example
+
+```ts title="esewa-payment.ts"
+import { EsewaClient } from '@nabwin/paisa/esewa';
+
+const esewa = new EsewaClient({
+  merchantCode: process.env.ESEWA_MERCHANT_CODE!,
+  secretKey: process.env.ESEWA_SECRET_KEY!,
+  environment: 'sandbox',
+  successUrl: process.env.ESEWA_SUCCESS_URL,
+  failureUrl: process.env.ESEWA_FAILURE_URL,
+});
+
+// Server-side initiation — get a redirect URL
+const { paymentUrl } = await esewa.initiatePayment({
+  amount: 100,
+  transactionId: 'order-123',
+});
+
+// Redirect your user to paymentUrl
+```
+
+<Cards>
+  <Card title="Installation" href="/docs/installation" />
+  <Card title="eSewa Guide" href="/docs/esewa" />
+  <Card title="Khalti Guide" href="/docs/khalti" />
+  <Card title="NestJS Integration" href="/docs/nestjs" />
+</Cards>

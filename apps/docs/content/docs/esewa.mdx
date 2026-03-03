@@ -1,0 +1,182 @@
+---
+title: eSewa
+description: Integrate eSewa payments with @nabwin/paisa
+---
+
+## Setup
+
+Create an `EsewaClient` with your merchant credentials:
+
+```ts title="esewa.ts"
+import { EsewaClient } from '@nabwin/paisa/esewa';
+
+const esewa = new EsewaClient({
+  merchantCode: process.env.ESEWA_MERCHANT_CODE!,
+  secretKey: process.env.ESEWA_SECRET_KEY!,
+  environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+  successUrl: process.env.ESEWA_SUCCESS_URL,
+  failureUrl: process.env.ESEWA_FAILURE_URL,
+});
+```
+
+<Callout type="warn" title="Never hardcode credentials">
+  The example above uses `process.env` for all sensitive values. Store your merchant code, secret key, and URLs in environment variables (`.env` file, platform secrets, etc.) — never commit them to source control. The sandbox credentials `EPAYTEST` / `8gBm/:&EnhH.1/q` are fine for local testing but should still come from env vars in real code.
+</Callout>
+
+### Configuration
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `merchantCode` | `string` | Yes | eSewa merchant/product code (e.g. `EPAYTEST` for sandbox) |
+| `secretKey` | `string` | Yes | HMAC secret key for signature generation |
+| `environment` | `"sandbox" \| "production"` | Yes | Target environment |
+| `successUrl` | `string` | No | Default success redirect URL (can be overridden per-request) |
+| `failureUrl` | `string` | No | Default failure redirect URL (can be overridden per-request) |
+
+> `successUrl` and `failureUrl` must be provided either in the config or in each payment request. If missing from both, the SDK throws an `EsewaValidationError`.
+
+---
+
+## Initiate Payment (Server-Side)
+
+The `initiatePayment` method POSTs to eSewa's form endpoint server-side, captures the 302 redirect, and returns the payment URL. No HTML form needed.
+
+```ts title="initiate.ts"
+const response = await esewa.initiatePayment({
+  amount: 100,
+  transactionId: 'order-123',
+});
+
+console.log(response.paymentUrl);
+// Redirect your user to this URL
+```
+
+### Request Fields
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `amount` | `number` | Yes | - | Item price (without tax or charges) |
+| `taxAmount` | `number` | No | `0` | Tax amount |
+| `serviceCharge` | `number` | No | `0` | Service charge |
+| `deliveryCharge` | `number` | No | `0` | Delivery charge |
+| `transactionId` | `string` | Yes | - | Your unique order/transaction ID |
+| `successUrl` | `string` | No | Config value | Override success redirect URL |
+| `failureUrl` | `string` | No | Config value | Override failure redirect URL |
+
+> `totalAmount` is auto-computed as `amount + taxAmount + serviceCharge + deliveryCharge`. You never pass it yourself.
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `transactionId` | `string` | Your transaction ID |
+| `productCode` | `string` | eSewa merchant/product code |
+| `totalAmount` | `number` | Computed total amount |
+| `signature` | `string` | HMAC-SHA256 signature |
+| `paymentUrl` | `string` | URL to redirect the user to |
+
+---
+
+## Get Payment Form Data
+
+If you prefer a client-side form redirect, use `getPaymentFormData` to get the form action URL and hidden fields:
+
+```ts title="form-data.ts"
+const formData = esewa.getPaymentFormData({
+  amount: 100,
+  transactionId: 'order-123',
+});
+
+console.log(formData.actionUrl);  // POST to this URL
+console.log(formData.payload);    // Hidden form fields
+```
+
+Pass `{ html: true }` to get a ready-to-render HTML form snippet:
+
+```ts title="form-html.ts"
+const { html } = esewa.getPaymentFormData(
+  { amount: 100, transactionId: 'order-123' },
+  { html: true },
+);
+
+// html contains a complete <form> element with hidden inputs
+```
+
+---
+
+## Verify Payment
+
+When eSewa redirects to your `successUrl`, it includes a base64-encoded `data` query parameter. Pass it to `verifyPayment`:
+
+```ts title="verify.ts"
+const result = await esewa.verifyPayment({
+  encodedData: req.query.data, // base64 string from eSewa redirect
+});
+
+if (result.isComplete) {
+  console.log('Payment successful!');
+  console.log('Ref ID:', result.refId);
+  console.log('Amount:', result.totalAmount);
+} else {
+  console.log('Payment status:', result.status);
+}
+```
+
+The SDK verifies the HMAC signature and throws `EsewaSignatureMismatchError` if it doesn't match (possible tampering).
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `status` | `EsewaPaymentStatus` | Payment status (`COMPLETE`, `PENDING`, etc.) |
+| `isComplete` | `boolean` | `true` if status is `COMPLETE` |
+| `refId` | `string` | eSewa's reference/transaction code |
+| `transactionId` | `string` | Your transaction ID |
+| `totalAmount` | `number` | Total payment amount |
+| `raw` | `Record<string, unknown>` | Raw decoded payload from eSewa |
+
+---
+
+## Check Transaction Status
+
+For server-to-server verification independent of the callback, use `checkTransactionStatus`:
+
+```ts title="status-check.ts"
+const status = await esewa.checkTransactionStatus({
+  transactionId: 'order-123',
+  totalAmount: 100,
+});
+
+if (status.isComplete) {
+  console.log('Transaction confirmed:', status.refId);
+}
+```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `transactionId` | `string` | Yes | Your unique order/transaction ID |
+| `totalAmount` | `number` | Yes | Total amount of the transaction |
+
+---
+
+## Payment Status Values
+
+The `EsewaPaymentStatus` type includes:
+
+| Status | Description |
+| --- | --- |
+| `COMPLETE` | Payment completed successfully |
+| `PENDING` | Payment is pending |
+| `FULL_REFUND` | Fully refunded |
+| `PARTIAL_REFUND` | Partially refunded |
+| `AMBIGUOUS` | Ambiguous status |
+| `NOT_FOUND` | Transaction not found |
+| `CANCELED` | Payment canceled |
+
+---
+
+## Error Handling
+
+See the [Error Handling](/docs/error-handling) page for all eSewa-specific error classes.

@@ -1,0 +1,341 @@
+---
+title: NestJS Integration
+description: Use @nabwin/paisa with NestJS via the official adapter
+---
+
+The `@nabwin/paisa-nestjs` package provides NestJS dynamic modules for both eSewa and Khalti.
+
+## Installation
+
+```bash tab="bun"
+bun add @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+```bash tab="npm"
+npm install @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+```bash tab="pnpm"
+pnpm add @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+```bash tab="yarn"
+yarn add @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+---
+
+## eSewa Module
+
+### Static Configuration
+
+```ts title="app.module.ts"
+import { Module } from '@nestjs/common';
+import { EsewaModule } from '@nabwin/paisa-nestjs/esewa';
+
+@Module({
+  imports: [
+    EsewaModule.forRoot({
+      merchantCode: process.env.ESEWA_MERCHANT_CODE!,
+      secretKey: process.env.ESEWA_SECRET_KEY!,
+      environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+      successUrl: process.env.ESEWA_SUCCESS_URL,
+      failureUrl: process.env.ESEWA_FAILURE_URL,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+<Callout type="warn" title="Never hardcode credentials">
+  Always load credentials from environment variables. The example above uses `process.env` directly, but in NestJS the recommended approach is `forRootAsync` with `ConfigService` (shown below).
+</Callout>
+
+### Async Configuration (Recommended)
+
+Use `forRootAsync` to load config from `ConfigService` or other providers:
+
+```ts title="app.module.ts"
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EsewaModule } from '@nabwin/paisa-nestjs/esewa';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot(),
+    EsewaModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        merchantCode: config.get('ESEWA_MERCHANT_CODE')!,
+        secretKey: config.get('ESEWA_SECRET_KEY')!,
+        environment: config.get('NODE_ENV') === 'production'
+          ? 'production'
+          : 'sandbox',
+        successUrl: config.get('ESEWA_SUCCESS_URL'),
+        failureUrl: config.get('ESEWA_FAILURE_URL'),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### Using the Service
+
+Inject `EsewaService` into your controllers or services. Define DTOs with `class-validator` to validate incoming requests:
+
+```ts title="dto/initiate-esewa-payment.dto.ts"
+import { IsNumber, IsString, IsPositive } from 'class-validator';
+
+export class InitiateEsewaPaymentDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+
+  @IsString()
+  orderId: string;
+}
+```
+
+```ts title="payment.controller.ts"
+import { Controller, Post, Body, Query, Get } from '@nestjs/common';
+import { EsewaService } from '@nabwin/paisa-nestjs/esewa';
+import { InitiateEsewaPaymentDto } from './dto/initiate-esewa-payment.dto';
+
+@Controller('payment/esewa')
+export class PaymentController {
+  constructor(private readonly esewaService: EsewaService) {}
+
+  @Post('initiate')
+  async initiate(@Body() dto: InitiateEsewaPaymentDto) {
+    const response = await this.esewaService.initiatePayment({
+      amount: dto.amount,
+      transactionId: dto.orderId,
+    });
+
+    return { paymentUrl: response.paymentUrl };
+  }
+
+  @Get('success')
+  async handleSuccess(@Query('data') data: string) {
+    const result = await this.esewaService.verifyPayment({
+      encodedData: data,
+    });
+
+    if (result.isComplete) {
+      // Payment verified — update your order
+      return { status: 'success', refId: result.refId };
+    }
+
+    return { status: result.status };
+  }
+
+  @Get('status')
+  async checkStatus(
+    @Query('transactionId') transactionId: string,
+    @Query('totalAmount') totalAmount: string,
+  ) {
+    return this.esewaService.checkTransactionStatus({
+      transactionId,
+      totalAmount: Number(totalAmount),
+    });
+  }
+}
+```
+
+<Callout type="info" title="Validation">
+  The example above uses `class-validator` with NestJS's `ValidationPipe`. You can also use Zod, Joi, or any other validation approach you prefer — just make sure you validate request bodies before passing them to the service.
+</Callout>
+
+### EsewaService Methods
+
+| Method | Description |
+| --- | --- |
+| `initiatePayment(req)` | Server-side payment initiation, returns a redirect URL |
+| `getPaymentFormData(req, options?)` | Generate form action URL + hidden fields |
+| `verifyPayment(req)` | Verify the base64-encoded callback data |
+| `checkTransactionStatus(req)` | Server-to-server transaction status check |
+
+All methods delegate to the underlying `EsewaClient`. See the [eSewa guide](/docs/esewa) for detailed request/response types.
+
+---
+
+## Khalti Module
+
+### Static Configuration
+
+```ts title="app.module.ts"
+import { Module } from '@nestjs/common';
+import { KhaltiModule } from '@nabwin/paisa-nestjs/khalti';
+
+@Module({
+  imports: [
+    KhaltiModule.forRoot({
+      secretKey: process.env.KHALTI_SECRET_KEY!,
+      environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+      returnUrl: process.env.KHALTI_RETURN_URL,
+      websiteUrl: process.env.KHALTI_WEBSITE_URL,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+<Callout type="warn" title="Never hardcode credentials">
+  Always load credentials from environment variables. For NestJS, prefer `forRootAsync` with `ConfigService` (shown below).
+</Callout>
+
+### Async Configuration (Recommended)
+
+```ts title="app.module.ts"
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { KhaltiModule } from '@nabwin/paisa-nestjs/khalti';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot(),
+    KhaltiModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secretKey: config.get('KHALTI_SECRET_KEY')!,
+        environment: config.get('NODE_ENV') === 'production'
+          ? 'production'
+          : 'sandbox',
+        returnUrl: config.get('KHALTI_RETURN_URL'),
+        websiteUrl: config.get('KHALTI_WEBSITE_URL'),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### Using the Service
+
+```ts title="dto/initiate-khalti-payment.dto.ts"
+import { IsNumber, IsString, IsPositive } from 'class-validator';
+
+export class InitiateKhaltiPaymentDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+
+  @IsString()
+  orderId: string;
+
+  @IsString()
+  orderName: string;
+}
+```
+
+```ts title="payment.controller.ts"
+import { Controller, Post, Body, Query, Get } from '@nestjs/common';
+import { KhaltiService } from '@nabwin/paisa-nestjs/khalti';
+import { InitiateKhaltiPaymentDto } from './dto/initiate-khalti-payment.dto';
+
+@Controller('payment/khalti')
+export class PaymentController {
+  constructor(private readonly khaltiService: KhaltiService) {}
+
+  @Post('initiate')
+  async initiate(@Body() dto: InitiateKhaltiPaymentDto) {
+    const response = await this.khaltiService.initiatePayment({
+      amount: dto.amount,
+      purchaseOrderId: dto.orderId,
+      purchaseOrderName: dto.orderName,
+    });
+
+    return {
+      paymentUrl: response.paymentUrl,
+      pidx: response.pidx,
+    };
+  }
+
+  @Get('verify')
+  async verify(@Query('pidx') pidx: string) {
+    const result = await this.khaltiService.verifyPayment({ pidx });
+
+    if (result.isComplete) {
+      return { status: 'success', transactionId: result.transactionId };
+    }
+
+    return { status: result.status };
+  }
+}
+```
+
+### KhaltiService Methods
+
+| Method | Description |
+| --- | --- |
+| `initiatePayment(req)` | Initiate payment, returns a redirect URL |
+| `verifyPayment(req)` | Verify payment using the `pidx` from the return URL |
+
+All methods delegate to the underlying `KhaltiClient`. See the [Khalti guide](/docs/khalti) for detailed request/response types.
+
+---
+
+## Using Both Gateways
+
+You can use both eSewa and Khalti in the same application:
+
+```ts title="app.module.ts"
+import { Module } from '@nestjs/common';
+import { EsewaModule } from '@nabwin/paisa-nestjs/esewa';
+import { KhaltiModule } from '@nabwin/paisa-nestjs/khalti';
+
+@Module({
+  imports: [
+    EsewaModule.forRoot({
+      merchantCode: process.env.ESEWA_MERCHANT_CODE!,
+      secretKey: process.env.ESEWA_SECRET_KEY!,
+      environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+      successUrl: process.env.ESEWA_SUCCESS_URL,
+      failureUrl: process.env.ESEWA_FAILURE_URL,
+    }),
+    KhaltiModule.forRoot({
+      secretKey: process.env.KHALTI_SECRET_KEY!,
+      environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+      returnUrl: process.env.KHALTI_RETURN_URL,
+      websiteUrl: process.env.KHALTI_WEBSITE_URL,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+<Callout type="info">
+  For production apps, use `forRootAsync` with `ConfigService` for both modules instead of `process.env` directly. See the individual module sections above for examples.
+</Callout>
+
+Then inject both services wherever needed:
+
+```ts title="payment.service.ts"
+import { Injectable } from '@nestjs/common';
+import { EsewaService } from '@nabwin/paisa-nestjs/esewa';
+import { KhaltiService } from '@nabwin/paisa-nestjs/khalti';
+
+@Injectable()
+export class PaymentService {
+  constructor(
+    private readonly esewaService: EsewaService,
+    private readonly khaltiService: KhaltiService,
+  ) {}
+
+  async pay(gateway: 'esewa' | 'khalti', amount: number, orderId: string) {
+    if (gateway === 'esewa') {
+      return this.esewaService.initiatePayment({
+        amount,
+        transactionId: orderId,
+      });
+    }
+
+    return this.khaltiService.initiatePayment({
+      amount,
+      purchaseOrderId: orderId,
+      purchaseOrderName: `Order ${orderId}`,
+    });
+  }
+}
+```

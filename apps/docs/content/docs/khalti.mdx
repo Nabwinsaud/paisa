@@ -1,0 +1,145 @@
+---
+title: Khalti
+description: Integrate Khalti payments with @nabwin/paisa
+---
+
+## Setup
+
+Create a `KhaltiClient` with your secret key:
+
+```ts title="khalti.ts"
+import { KhaltiClient } from '@nabwin/paisa/khalti';
+
+const khalti = new KhaltiClient({
+  secretKey: process.env.KHALTI_SECRET_KEY!,
+  environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+  returnUrl: process.env.KHALTI_RETURN_URL,
+  websiteUrl: process.env.KHALTI_WEBSITE_URL,
+});
+```
+
+<Callout type="warn" title="Never hardcode credentials">
+  Always load your secret key and URLs from environment variables (`.env` file, platform secrets, etc.). Never commit real credentials to source control.
+</Callout>
+
+### Configuration
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `secretKey` | `string` | Yes | Khalti secret key (live or test) |
+| `environment` | `"sandbox" \| "production"` | Yes | Target environment |
+| `returnUrl` | `string` | No | Default return URL after payment (can be overridden per-request) |
+| `websiteUrl` | `string` | No | Default website URL (can be overridden per-request) |
+
+> `returnUrl` and `websiteUrl` must be provided either in the config or in each payment request. If missing from both, the SDK throws a `KhaltiValidationError`.
+
+---
+
+## Initiate Payment
+
+The `initiatePayment` method calls Khalti's e-payment API and returns a payment URL to redirect the user to:
+
+```ts title="initiate.ts"
+const response = await khalti.initiatePayment({
+  amount: 100,
+  purchaseOrderId: 'order-123',
+  purchaseOrderName: 'Test Order',
+});
+
+console.log(response.paymentUrl);
+// Redirect your user to this URL
+console.log(response.pidx);
+// Save this for verification later
+```
+
+### Amount Handling
+
+The SDK accepts amounts in **NPR** (e.g. `100` for Rs 100) and converts to **paisa** internally (x100) before sending to Khalti. Response amounts are converted back to NPR.
+
+### Request Fields
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `amount` | `number` | Yes | - | Amount in NPR (e.g. `100` for Rs 100) |
+| `purchaseOrderId` | `string` | Yes | - | Your unique order ID |
+| `purchaseOrderName` | `string` | Yes | - | Human-readable order name |
+| `returnUrl` | `string` | No | Config value | Override return URL |
+| `websiteUrl` | `string` | No | Config value | Override website URL |
+| `customer` | `KhaltiCustomer` | No | - | Optional customer details |
+
+### Customer Object
+
+```ts
+interface KhaltiCustomer {
+  name: string;
+  email: string;
+  phone: string;
+}
+```
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `pidx` | `string` | Payment identifier (use for verification) |
+| `paymentUrl` | `string` | URL to redirect the user to |
+| `expiresAt` | `string` | Expiry timestamp |
+| `expiresIn` | `number` | Seconds until the payment link expires |
+
+---
+
+## Verify Payment
+
+After Khalti redirects back to your `returnUrl`, verify the payment using the `pidx` from the query parameters:
+
+```ts title="verify.ts"
+const result = await khalti.verifyPayment({
+  pidx: req.query.pidx,
+});
+
+if (result.isComplete) {
+  console.log('Payment successful!');
+  console.log('Transaction ID:', result.transactionId);
+  console.log('Amount:', result.totalAmount);
+} else {
+  console.log('Payment status:', result.status);
+}
+```
+
+> Khalti returns HTTP 400 for expired/canceled payments. The SDK handles this gracefully, returning a response with `isComplete: false` instead of throwing.
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `pidx` | `string` | Payment identifier |
+| `status` | `KhaltiPaymentStatus` | Payment status |
+| `totalAmount` | `number` | Total amount in NPR |
+| `fee` | `number` | Khalti fee in NPR |
+| `refunded` | `boolean` | Whether payment was refunded |
+| `isComplete` | `boolean` | `true` if status is `Completed` |
+| `transactionId` | `string` | Khalti transaction ID |
+| `purchaseOrderId` | `string` | Your order ID |
+| `raw` | `Record<string, unknown>` | Raw response from Khalti |
+
+---
+
+## Payment Status Values
+
+The `KhaltiPaymentStatus` type includes:
+
+| Status | Description |
+| --- | --- |
+| `Completed` | Payment completed successfully |
+| `Pending` | Payment is pending |
+| `Initiated` | Payment initiated but not completed |
+| `Refunded` | Payment fully refunded |
+| `Expired` | Payment link expired |
+| `User canceled` | User canceled the payment |
+| `Partially refunded` | Partially refunded |
+
+---
+
+## Error Handling
+
+See the [Error Handling](/docs/error-handling) page for all Khalti-specific error classes.

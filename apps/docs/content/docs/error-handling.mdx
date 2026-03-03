@@ -1,0 +1,156 @@
+---
+title: Error Handling
+description: Error classes and handling patterns in @nabwin/paisa
+---
+
+Both eSewa and Khalti clients throw specific error classes that you can catch and handle. All errors extend the standard `Error` class.
+
+## eSewa Errors
+
+```ts
+import {
+  EsewaConfigError,
+  EsewaValidationError,
+  EsewaSignatureMismatchError,
+  EsewaInitiationError,
+  EsewaStatusCheckError,
+  EsewaVerificationError,
+} from '@nabwin/paisa/esewa';
+```
+
+### EsewaConfigError
+
+Thrown when the `EsewaClient` constructor receives invalid config (missing `merchantCode`, `secretKey`, invalid `environment`, or malformed URLs).
+
+```ts
+try {
+  const esewa = new EsewaClient({ merchantCode: '', secretKey: '', environment: 'sandbox' });
+} catch (err) {
+  if (err instanceof EsewaConfigError) {
+    console.log(err.message); // "eSewa config error: ..."
+  }
+}
+```
+
+### EsewaValidationError
+
+Thrown when a payment request has invalid fields (negative amount, missing `transactionId`, or missing `successUrl`/`failureUrl`).
+
+```ts
+try {
+  await esewa.initiatePayment({ amount: -1, transactionId: '' });
+} catch (err) {
+  if (err instanceof EsewaValidationError) {
+    console.log(err.message); // "eSewa validation error: ..."
+  }
+}
+```
+
+### EsewaSignatureMismatchError
+
+Thrown by `verifyPayment` when the HMAC signature doesn't match. This indicates possible tampering with the callback data.
+
+```ts
+try {
+  await esewa.verifyPayment({ encodedData: tamperedData });
+} catch (err) {
+  if (err instanceof EsewaSignatureMismatchError) {
+    // Do NOT trust this payment callback
+    console.log('Possible payment tampering detected');
+  }
+}
+```
+
+### EsewaInitiationError
+
+Thrown when `initiatePayment` gets an unexpected response from eSewa (not a redirect).
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `statusCode` | `number \| undefined` | HTTP status code |
+| `responseBody` | `string \| undefined` | Raw response body |
+
+### EsewaStatusCheckError
+
+Thrown when `checkTransactionStatus` gets a non-OK response from eSewa.
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `statusCode` | `number` | HTTP status code |
+| `responseBody` | `string` | Raw response body |
+
+### EsewaVerificationError
+
+Thrown on general verification failures.
+
+---
+
+## Khalti Errors
+
+```ts
+import {
+  KhaltiConfigError,
+  KhaltiValidationError,
+  KhaltiApiError,
+} from '@nabwin/paisa/khalti';
+```
+
+### KhaltiConfigError
+
+Thrown when the `KhaltiClient` constructor receives invalid config.
+
+### KhaltiValidationError
+
+Thrown when a payment request has invalid fields (negative amount, missing `purchaseOrderId`, or missing `returnUrl`/`websiteUrl`).
+
+### KhaltiApiError
+
+Thrown when Khalti's API returns an error response. Contains structured error data when available.
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `statusCode` | `number` | HTTP status code |
+| `responseBody` | `string` | Raw response body |
+| `gatewayResponse` | `Record<string, unknown> \| null` | Parsed JSON error data from Khalti |
+
+```ts
+try {
+  await khalti.initiatePayment({ ... });
+} catch (err) {
+  if (err instanceof KhaltiApiError) {
+    console.log(err.statusCode);       // e.g. 400
+    console.log(err.gatewayResponse);  // structured error from Khalti
+  }
+}
+```
+
+> Note: `verifyPayment` handles HTTP 400 responses from Khalti gracefully for expired/canceled payments. It returns a response with `isComplete: false` instead of throwing.
+
+---
+
+## General Pattern
+
+A recommended pattern for handling payment errors:
+
+```ts
+import { EsewaValidationError, EsewaInitiationError } from '@nabwin/paisa/esewa';
+
+try {
+  const { paymentUrl } = await esewa.initiatePayment({
+    amount: 100,
+    transactionId: 'order-123',
+  });
+  // redirect user to paymentUrl
+} catch (err) {
+  if (err instanceof EsewaValidationError) {
+    // Bad request data — fix your input
+    return res.status(400).json({ error: err.message });
+  }
+  if (err instanceof EsewaInitiationError) {
+    // eSewa API issue
+    return res.status(502).json({ error: 'Payment gateway error' });
+  }
+  // Unexpected error
+  return res.status(500).json({ error: 'Internal server error' });
+}
+```

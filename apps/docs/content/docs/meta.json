@@ -1,0 +1,15 @@
+{
+  "title": "Documentation",
+  "root": true,
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "installation",
+    "---Guides---",
+    "esewa",
+    "khalti",
+    "nestjs",
+    "---Reference---",
+    "error-handling"
+  ]
+}

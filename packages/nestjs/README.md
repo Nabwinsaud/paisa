@@ -15,8 +15,15 @@ bun add @nabwin/paisa-nestjs
 ```
 
 ```bash
-# or with npm/pnpm/yarn
 npm install @nabwin/paisa-nestjs
+```
+
+```bash
+pnpm add @nabwin/paisa-nestjs
+```
+
+```bash
+yarn add @nabwin/paisa-nestjs
 ```
 
 ### Peer dependencies
@@ -60,6 +67,8 @@ import { EsewaModule } from "@nabwin/paisa-nestjs/esewa";
       merchantCode: "EPAYTEST",
       secretKey: "8gBm/:&EnhH.1/q",
       environment: "sandbox",
+      successUrl: "https://yoursite.com/payment/success",
+      failureUrl: "https://yoursite.com/payment/failure",
     }),
   ],
 })
@@ -84,6 +93,8 @@ import { EsewaModule } from "@nabwin/paisa-nestjs/esewa";
         merchantCode: config.getOrThrow("ESEWA_MERCHANT_CODE"),
         secretKey: config.getOrThrow("ESEWA_SECRET_KEY"),
         environment: config.get("NODE_ENV") === "production" ? "production" : "sandbox",
+        successUrl: config.getOrThrow("ESEWA_SUCCESS_URL"),
+        failureUrl: config.getOrThrow("ESEWA_FAILURE_URL"),
       }),
     }),
   ],
@@ -114,7 +125,8 @@ export class AppModule {}
 Once the module is imported, inject `EsewaService` or `KhaltiService` in any controller or provider:
 
 ```ts
-import { Controller, Post, Get, Body, Query } from "@nestjs/common";
+import { Controller, Post, Get, Body, Query, Res } from "@nestjs/common";
+import { Response } from "express";
 import { EsewaService } from "@nabwin/paisa-nestjs/esewa";
 import { KhaltiService } from "@nabwin/paisa-nestjs/khalti";
 
@@ -125,21 +137,57 @@ export class PaymentController {
     private readonly khalti: KhaltiService,
   ) {}
 
+  // ── eSewa ────────────────────────────────────────────────────────
+
+  // Option 1: Server-side initiation (recommended)
+  // Returns a paymentUrl — redirect the user there
   @Post("esewa/initiate")
-  initiateEsewa(@Body() body: { amount: number; orderId: string }) {
-    return this.esewa.initiatePayment({
+  async initiateEsewa(
+    @Body() body: { amount: number; orderId: string },
+    @Res() res: Response,
+  ) {
+    const result = await this.esewa.initiatePayment({
       amount: body.amount,
-      totalAmount: body.amount,
-      transactionUUID: body.orderId,
-      successUrl: "https://yoursite.com/payment/success",
-      failureUrl: "https://yoursite.com/payment/failure",
+      transactionId: body.orderId,
+    });
+
+    return res.redirect(result.paymentUrl);
+  }
+
+  // Option 2: Return form data (for custom frontend forms)
+  @Post("esewa/form")
+  getEsewaFormData(@Body() body: { amount: number; orderId: string }) {
+    return this.esewa.getPaymentFormData({
+      amount: body.amount,
+      transactionId: body.orderId,
     });
   }
 
+  // Verify eSewa callback
   @Get("esewa/verify")
-  verifyEsewa(@Query("data") data: string) {
-    return this.esewa.verifyPayment({ encodedData: data });
+  async verifyEsewa(@Query("data") data: string) {
+    const result = await this.esewa.verifyPayment({ encodedData: data });
+
+    if (result.isComplete) {
+      // Payment verified -- fulfill the order
+    }
+
+    return result;
   }
+
+  // Server-side status check
+  @Get("esewa/status")
+  checkEsewaStatus(
+    @Query("transactionId") transactionId: string,
+    @Query("totalAmount") totalAmount: string,
+  ) {
+    return this.esewa.checkTransactionStatus({
+      transactionId,
+      totalAmount: Number(totalAmount),
+    });
+  }
+
+  // ── Khalti ───────────────────────────────────────────────────────
 
   @Post("khalti/initiate")
   initiateKhalti(@Body() body: { amount: number; orderId: string }) {
@@ -153,11 +201,37 @@ export class PaymentController {
   }
 
   @Get("khalti/verify")
-  verifyKhalti(@Query("pidx") pidx: string) {
-    return this.khalti.verifyPayment({ pidx });
+  async verifyKhalti(@Query("pidx") pidx: string) {
+    const result = await this.khalti.verifyPayment({ pidx });
+
+    if (result.isComplete) {
+      // Payment verified -- fulfill the order
+    }
+
+    return result;
   }
 }
 ```
+
+`totalAmount` is always auto-computed from `amount + taxAmount + serviceCharge + deliveryCharge`. No need to pass it.
+
+---
+
+## EsewaService API
+
+| Method | Description |
+|--------|-------------|
+| `initiatePayment(req)` | POSTs to eSewa server-side, returns `paymentUrl` for redirect |
+| `getPaymentFormData(req, options?)` | Returns signed form payload (actionUrl + fields) |
+| `verifyPayment(req)` | Decodes + verifies base64 callback token |
+| `checkTransactionStatus(req)` | Server-side transaction status check |
+
+## KhaltiService API
+
+| Method | Description |
+|--------|-------------|
+| `initiatePayment(req)` | Calls Khalti initiate API, returns payment URL |
+| `verifyPayment(req)` | Calls Khalti lookup API, returns payment status |
 
 ---
 
@@ -170,7 +244,7 @@ import { Injectable } from "@nestjs/common";
 import { EsewaClient } from "@nabwin/paisa/esewa";
 
 @Injectable()
-export class CustomPaymentService {
+export class PaymentService {
   constructor(private readonly esewaClient: EsewaClient) {
     // Direct access to the core SDK client
   }

@@ -1,0 +1,74 @@
+---
+title: Installation
+description: Install @nabwin/paisa and get started
+---
+
+## Core SDK
+
+Install `@nabwin/paisa` to use the eSewa and Khalti clients directly:
+
+```bash tab="bun"
+bun add @nabwin/paisa
+```
+
+```bash tab="npm"
+npm install @nabwin/paisa
+```
+
+```bash tab="pnpm"
+pnpm add @nabwin/paisa
+```
+
+```bash tab="yarn"
+yarn add @nabwin/paisa
+```
+
+## NestJS Adapter
+
+If you're using NestJS, install the adapter package (it includes `@nabwin/paisa` as a peer dependency):
+
+```bash tab="bun"
+bun add @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+```bash tab="npm"
+npm install @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+```bash tab="pnpm"
+pnpm add @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+```bash tab="yarn"
+yarn add @nabwin/paisa @nabwin/paisa-nestjs
+```
+
+## Requirements
+
+- **Node.js** 18+ or **Bun** 1.0+
+- **TypeScript** 5.0+ (recommended)
+
+## Subpath Imports
+
+Both packages support subpath imports so you can import only the gateway you need:
+
+```ts
+// Import everything
+import { EsewaClient, KhaltiClient } from '@nabwin/paisa';
+
+// Import only eSewa
+import { EsewaClient } from '@nabwin/paisa/esewa';
+
+// Import only Khalti
+import { KhaltiClient } from '@nabwin/paisa/khalti';
+```
+
+This works with all TypeScript `moduleResolution` settings (`node`, `node16`, `bundler`, etc.) thanks to the `typesVersions` field in `package.json`.
+
+## Next Steps
+
+<Cards>
+  <Card title="eSewa Guide" href="/docs/esewa" />
+  <Card title="Khalti Guide" href="/docs/khalti" />
+  <Card title="NestJS Integration" href="/docs/nestjs" />
+</Cards>
