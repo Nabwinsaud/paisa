@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { highlight } from 'fumadocs-core/highlight';
 
 const codeExample = `import { EsewaClient } from '@nabwin/paisa/esewa';
 
@@ -58,7 +59,8 @@ const gateways = [
   { name: 'Fonepay', status: 'coming' as const },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const highlighted = await highlight(codeExample, { lang: 'ts', themes: { light: 'github-light', dark: 'github-dark' } });
   return (
     <div className="flex flex-col">
       {/* Hero */}
@@ -113,9 +115,9 @@ export default function HomePage() {
             </div>
             <span className="text-xs text-fd-muted-foreground ml-2 font-mono">payment.ts</span>
           </div>
-          <pre className="p-5 text-sm leading-relaxed overflow-x-auto">
-            <code>{codeExample}</code>
-          </pre>
+          <div className="p-5 text-sm leading-relaxed overflow-x-auto [&_pre]:!bg-transparent [&_code]:!bg-transparent">
+            {highlighted}
+          </div>
         </div>
       </section>
 
