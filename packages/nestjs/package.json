@@ -1,6 +1,6 @@
 {
   "name": "@nabwin/paisa-nestjs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "NestJS adapter for @nabwin/paisa — eSewa, Khalti modules",
   "license": "MIT",
   "type": "module",
