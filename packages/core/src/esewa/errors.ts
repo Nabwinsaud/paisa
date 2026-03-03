@@ -42,3 +42,16 @@ export class EsewaValidationError extends Error {
     this.name = "EsewaValidationError";
   }
 }
+
+/** Thrown when eSewa payment initiation fails (POST to eSewa returned unexpected response) */
+export class EsewaInitiationError extends Error {
+  public readonly statusCode: number | undefined;
+  public readonly responseBody: string | undefined;
+
+  constructor(message: string, statusCode?: number, responseBody?: string) {
+    super(`eSewa initiation failed: ${message}`);
+    this.name = "EsewaInitiationError";
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
+  }
+}

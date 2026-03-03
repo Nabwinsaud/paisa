@@ -22,16 +22,11 @@ export interface EsewaPaymentRequest {
   serviceCharge?: number;
   /** Delivery charge — defaults to 0 */
   deliveryCharge?: number;
-  /**
-   * Total amount. If omitted, auto-computed as:
-   * amount + (taxAmount ?? 0) + (serviceCharge ?? 0) + (deliveryCharge ?? 0)
-   */
-  totalAmount?: number;
   /** Your unique order/transaction ID */
   transactionId: string;
-  /** URL eSewa redirects to on successful payment (overrides config.successUrl) */
+  /** URL eSewa redirects to on successful payment (required — or set in config) */
   successUrl?: string;
-  /** URL eSewa redirects to on failed/cancelled payment (overrides config.failureUrl) */
+  /** URL eSewa redirects to on failed/cancelled payment (required — or set in config) */
   failureUrl?: string;
 }
 
@@ -48,6 +43,20 @@ export interface EsewaPaymentFormData {
   payload: Record<string, string>;
   /** HTML form snippet (only present when { html: true } is passed) */
   html?: string;
+}
+
+/** Response from initiatePayment — contains the redirect URL to eSewa's payment page */
+export interface EsewaInitiateResponse {
+  /** Your transaction ID */
+  transactionId: string;
+  /** eSewa merchant/product code */
+  productCode: string;
+  /** Computed total amount */
+  totalAmount: number;
+  /** HMAC-SHA256 signature */
+  signature: string;
+  /** Direct URL to eSewa's payment page (redirect the user here) */
+  paymentUrl: string;
 }
 
 export interface EsewaVerifyRequest {

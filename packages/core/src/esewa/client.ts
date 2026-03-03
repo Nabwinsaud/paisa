@@ -6,6 +6,7 @@ import type {
   EsewaVerifyRequest,
   EsewaVerifyResponse,
   EsewaPaymentFormData,
+  EsewaInitiateResponse,
   EsewaStatusCheckRequest,
   EsewaStatusCheckResponse,
   EsewaPaymentStatus,
@@ -14,6 +15,7 @@ import {
   EsewaConfigError,
   EsewaSignatureMismatchError,
   EsewaValidationError,
+  EsewaInitiationError,
   EsewaStatusCheckError,
 } from "./errors.js";
 import {
@@ -63,10 +65,79 @@ export class EsewaClient {
   }
 
   /**
+   * Compute the total amount from a payment request.
+   * totalAmount = amount + taxAmount + serviceCharge + deliveryCharge
+   */
+  private computeTotalAmount(req: EsewaPaymentRequest): number {
+    return (
+      req.amount +
+      (req.taxAmount ?? 0) +
+      (req.serviceCharge ?? 0) +
+      (req.deliveryCharge ?? 0)
+    );
+  }
+
+  /**
+   * Resolve successUrl and failureUrl from request or config.
+   * Throws EsewaValidationError if neither is provided.
+   */
+  private resolveUrls(req: EsewaPaymentRequest): {
+    successUrl: string;
+    failureUrl: string;
+  } {
+    const successUrl = req.successUrl ?? this.config.successUrl;
+    const failureUrl = req.failureUrl ?? this.config.failureUrl;
+
+    if (!successUrl) {
+      throw new EsewaValidationError(
+        "No successUrl provided — set it in config or pass it in the request",
+      );
+    }
+    if (!failureUrl) {
+      throw new EsewaValidationError(
+        "No failureUrl provided — set it in config or pass it in the request",
+      );
+    }
+
+    return { successUrl, failureUrl };
+  }
+
+  /**
+   * Build the signed payload for eSewa's form endpoint.
+   */
+  private buildPayload(
+    req: EsewaPaymentRequest,
+    totalAmount: number,
+    successUrl: string,
+    failureUrl: string,
+  ): Record<string, string> {
+    const uuid = req.transactionId;
+    const product = this.config.merchantCode;
+    const msg = `total_amount=${totalAmount},transaction_uuid=${uuid},product_code=${product}`;
+
+    return {
+      amount: String(req.amount),
+      tax_amount: String(req.taxAmount ?? 0),
+      total_amount: String(totalAmount),
+      transaction_uuid: uuid,
+      product_code: product,
+      product_service_charge: String(req.serviceCharge ?? 0),
+      product_delivery_charge: String(req.deliveryCharge ?? 0),
+      success_url: successUrl,
+      failure_url: failureUrl,
+      signed_field_names: "total_amount,transaction_uuid,product_code",
+      signature: this.sign(msg),
+    };
+  }
+
+  /**
    * Generate the form data needed to redirect the user to eSewa's payment page.
    *
-   * By default returns `{ actionUrl, payload }`. Pass `{ html: true }` in options
-   * to also get an `html` string containing a ready-to-render form snippet.
+   * Returns `{ actionUrl, payload }` — use these to build your own HTML form
+   * or POST server-side. Pass `{ html: true }` in options to also get an
+   * `html` string containing a ready-to-render form snippet.
+   *
+   * `totalAmount` is auto-computed as `amount + taxAmount + serviceCharge + deliveryCharge`.
    */
   getPaymentFormData(
     req: EsewaPaymentRequest,
@@ -74,44 +145,9 @@ export class EsewaClient {
   ): EsewaPaymentFormData {
     this.validatePaymentRequest(req);
 
-    const taxAmount = req.taxAmount ?? 0;
-    const serviceCharge = req.serviceCharge ?? 0;
-    const deliveryCharge = req.deliveryCharge ?? 0;
-    const totalAmount =
-      req.totalAmount ?? req.amount + taxAmount + serviceCharge + deliveryCharge;
-
-    const successUrl = req.successUrl ?? this.config.successUrl;
-    const failureUrl = req.failureUrl ?? this.config.failureUrl;
-
-    if (!successUrl) {
-      throw new EsewaValidationError(
-        'No successUrl provided — set it in config or pass it in the request',
-      );
-    }
-    if (!failureUrl) {
-      throw new EsewaValidationError(
-        'No failureUrl provided — set it in config or pass it in the request',
-      );
-    }
-
-    const uuid = req.transactionId;
-    const product = this.config.merchantCode;
-    const msg = `total_amount=${totalAmount},transaction_uuid=${uuid},product_code=${product}`;
-
-    const payload: Record<string, string> = {
-      amount: String(req.amount),
-      tax_amount: String(taxAmount),
-      total_amount: String(totalAmount),
-      transaction_uuid: uuid,
-      product_code: product,
-      product_service_charge: String(serviceCharge),
-      product_delivery_charge: String(deliveryCharge),
-      success_url: successUrl,
-      failure_url: failureUrl,
-      signed_field_names: "total_amount,transaction_uuid,product_code",
-      signature: this.sign(msg),
-    };
-
+    const totalAmount = this.computeTotalAmount(req);
+    const { successUrl, failureUrl } = this.resolveUrls(req);
+    const payload = this.buildPayload(req, totalAmount, successUrl, failureUrl);
     const actionUrl = `${this.baseUrl}/api/epay/main/v2/form`;
 
     const result: EsewaPaymentFormData = { actionUrl, payload };
@@ -121,6 +157,89 @@ export class EsewaClient {
     }
 
     return result;
+  }
+
+  /**
+   * Initiate a payment by POSTing to eSewa's form endpoint server-side.
+   *
+   * eSewa responds with a 302 redirect to their payment page. This method
+   * captures that redirect URL and returns it as `paymentUrl` so you can
+   * redirect the user directly — no HTML form needed.
+   *
+   * `totalAmount` is auto-computed as `amount + taxAmount + serviceCharge + deliveryCharge`.
+   */
+  async initiatePayment(
+    req: EsewaPaymentRequest,
+  ): Promise<EsewaInitiateResponse> {
+    this.validatePaymentRequest(req);
+
+    const totalAmount = this.computeTotalAmount(req);
+    const { successUrl, failureUrl } = this.resolveUrls(req);
+    const payload = this.buildPayload(req, totalAmount, successUrl, failureUrl);
+
+    const actionUrl = `${this.baseUrl}/api/epay/main/v2/form`;
+    const formData = new URLSearchParams(payload);
+
+    try {
+      const response = await fetch(actionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString(),
+        redirect: "manual",
+      });
+
+      // eSewa returns 302 with Location header pointing to the payment page
+      const locationUrl = response.headers.get("location");
+
+      if (response.status >= 300 && response.status < 400 && locationUrl) {
+        return {
+          transactionId: req.transactionId,
+          productCode: this.config.merchantCode,
+          totalAmount,
+          signature: payload.signature!,
+          paymentUrl: locationUrl,
+        };
+      }
+
+      // If eSewa returns 200 with a redirect URL in the response body or
+      // the Location header is present on a non-redirect status
+      if (locationUrl) {
+        return {
+          transactionId: req.transactionId,
+          productCode: this.config.merchantCode,
+          totalAmount,
+          signature: payload.signature!,
+          paymentUrl: locationUrl,
+        };
+      }
+
+      // If we got a successful response but no Location header, the URL might
+      // be the final URL itself (eSewa rendered the payment page directly)
+      if (response.ok) {
+        return {
+          transactionId: req.transactionId,
+          productCode: this.config.merchantCode,
+          totalAmount,
+          signature: payload.signature!,
+          paymentUrl: response.url || actionUrl,
+        };
+      }
+
+      // Non-redirect, non-OK response — something went wrong
+      const body = await response.text();
+      throw new EsewaInitiationError(
+        `Unexpected response (HTTP ${response.status})`,
+        response.status,
+        body,
+      );
+    } catch (err) {
+      if (err instanceof EsewaInitiationError) throw err;
+      if (err instanceof EsewaValidationError) throw err;
+
+      throw new EsewaInitiationError(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   /**
@@ -205,7 +324,9 @@ export class EsewaClient {
 
     const data = (await res.json()) as Record<string, unknown>;
 
-    const status = (String(data["status"] ?? "NOT_FOUND")) as EsewaPaymentStatus;
+    const status = String(
+      data["status"] ?? "NOT_FOUND",
+    ) as EsewaPaymentStatus;
 
     return {
       status,
@@ -220,7 +341,11 @@ export class EsewaClient {
   private validatePaymentRequest(req: EsewaPaymentRequest): void {
     try {
       assertPositiveAmount(req.amount, "amount", "EsewaPaymentRequest");
-      assertNonNegativeAmount(req.taxAmount, "taxAmount", "EsewaPaymentRequest");
+      assertNonNegativeAmount(
+        req.taxAmount,
+        "taxAmount",
+        "EsewaPaymentRequest",
+      );
       assertNonNegativeAmount(
         req.serviceCharge,
         "serviceCharge",
@@ -241,13 +366,6 @@ export class EsewaClient {
       }
       if (req.failureUrl !== undefined) {
         assertValidUrl(req.failureUrl, "failureUrl", "EsewaPaymentRequest");
-      }
-      if (req.totalAmount !== undefined) {
-        assertPositiveAmount(
-          req.totalAmount,
-          "totalAmount",
-          "EsewaPaymentRequest",
-        );
       }
     } catch (err) {
       throw new EsewaValidationError(

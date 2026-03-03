@@ -1,6 +1,6 @@
 {
   "name": "@nabwin/paisa-nestjs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NestJS adapter for @nabwin/paisa — eSewa, Khalti modules",
   "license": "MIT",
   "type": "module",
@@ -39,7 +39,20 @@
       }
     }
   },
-  "files": ["dist", "README.md"],
+  "typesVersions": {
+    "*": {
+      "esewa": [
+        "./dist/esewa/index.d.ts"
+      ],
+      "khalti": [
+        "./dist/khalti/index.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -56,9 +69,15 @@
     "reflect-metadata": "^0.2.0"
   },
   "peerDependenciesMeta": {
-    "@nestjs/common": { "optional": false },
-    "@nestjs/core": { "optional": false },
-    "reflect-metadata": { "optional": false }
+    "@nestjs/common": {
+      "optional": false
+    },
+    "@nestjs/core": {
+      "optional": false
+    },
+    "reflect-metadata": {
+      "optional": false
+    }
   },
   "devDependencies": {
     "@nestjs/common": "^10.0.0",
@@ -70,7 +89,15 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["nepal", "paisa", "payment", "esewa", "khalti", "nestjs", "module"],
+  "keywords": [
+    "nepal",
+    "paisa",
+    "payment",
+    "esewa",
+    "khalti",
+    "nestjs",
+    "module"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Nabwinsaud/paisa",

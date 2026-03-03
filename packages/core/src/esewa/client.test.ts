@@ -4,6 +4,7 @@ import {
   EsewaSignatureMismatchError,
   EsewaConfigError,
   EsewaValidationError,
+  EsewaInitiationError,
   EsewaStatusCheckError,
 } from "./errors.js";
 
@@ -18,9 +19,11 @@ const TEST_CONFIG = {
 function mockFetchResponse(body: unknown, status = 200) {
   const original = globalThis.fetch;
   let capturedUrl: string | undefined;
+  let capturedInit: RequestInit | undefined;
 
-  const fn = async (input: string | URL | Request) => {
+  const fn = async (input: string | URL | Request, init?: RequestInit) => {
     capturedUrl = String(input);
+    capturedInit = init;
     return new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
@@ -37,6 +40,9 @@ function mockFetchResponse(body: unknown, status = 200) {
     get url() {
       return capturedUrl;
     },
+    get init() {
+      return capturedInit;
+    },
   };
 }
 
@@ -51,6 +57,38 @@ function mockFetchText(text: string, status: number) {
   return {
     restore: () => {
       globalThis.fetch = original;
+    },
+  };
+}
+
+function mockFetchRedirect(locationUrl: string) {
+  const original = globalThis.fetch;
+  let capturedUrl: string | undefined;
+  let capturedBody: string | undefined;
+
+  const fn = async (input: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = String(input);
+    if (init?.body) {
+      capturedBody = String(init.body);
+    }
+    return new Response(null, {
+      status: 302,
+      headers: { Location: locationUrl },
+    });
+  };
+  globalThis.fetch = Object.assign(fn, {
+    preconnect: () => {},
+  }) as unknown as typeof fetch;
+
+  return {
+    restore: () => {
+      globalThis.fetch = original;
+    },
+    get url() {
+      return capturedUrl;
+    },
+    get body() {
+      return capturedBody;
     },
   };
 }
@@ -200,16 +238,6 @@ describe("EsewaClient", () => {
       expect(data.payload.total_amount).toBe("120");
     });
 
-    it("uses explicit totalAmount when provided", () => {
-      const data = client.getPaymentFormData({
-        amount: 100,
-        taxAmount: 13,
-        totalAmount: 200,
-        transactionId: "t1",
-      });
-      expect(data.payload.total_amount).toBe("200");
-    });
-
     it("uses per-request successUrl/failureUrl over config", () => {
       const data = client.getPaymentFormData({
         amount: 100,
@@ -291,6 +319,146 @@ describe("EsewaClient", () => {
           successUrl: "not-valid",
         }),
       ).toThrow(EsewaValidationError);
+    });
+  });
+
+  // ── initiatePayment ────────────────────────────────────────────────
+
+  describe("initiatePayment", () => {
+    it("POSTs form data to eSewa and returns paymentUrl from 302 redirect", async () => {
+      const spy = mockFetchRedirect(
+        "https://rc-epay.esewa.com.np/payment?ref=abc123",
+      );
+
+      try {
+        const result = await client.initiatePayment({
+          amount: 100,
+          transactionId: "order-init-1",
+        });
+
+        expect(spy.url).toContain(
+          "rc-epay.esewa.com.np/api/epay/main/v2/form",
+        );
+        expect(result.paymentUrl).toBe(
+          "https://rc-epay.esewa.com.np/payment?ref=abc123",
+        );
+        expect(result.transactionId).toBe("order-init-1");
+        expect(result.productCode).toBe("EPAYTEST");
+        expect(result.totalAmount).toBe(100);
+        expect(result.signature).toBeDefined();
+      } finally {
+        spy.restore();
+      }
+    });
+
+    it("auto-computes totalAmount including charges", async () => {
+      const spy = mockFetchRedirect(
+        "https://rc-epay.esewa.com.np/payment?ref=abc",
+      );
+
+      try {
+        const result = await client.initiatePayment({
+          amount: 100,
+          taxAmount: 13,
+          serviceCharge: 5,
+          deliveryCharge: 2,
+          transactionId: "order-charges",
+        });
+
+        expect(result.totalAmount).toBe(120);
+      } finally {
+        spy.restore();
+      }
+    });
+
+    it("sends form-urlencoded body with correct payload fields", async () => {
+      const spy = mockFetchRedirect("https://rc-epay.esewa.com.np/pay");
+
+      try {
+        await client.initiatePayment({
+          amount: 500,
+          transactionId: "order-form",
+        });
+
+        expect(spy.body).toBeDefined();
+        const params = new URLSearchParams(spy.body!);
+        expect(params.get("amount")).toBe("500");
+        expect(params.get("total_amount")).toBe("500");
+        expect(params.get("transaction_uuid")).toBe("order-form");
+        expect(params.get("product_code")).toBe("EPAYTEST");
+        expect(params.get("success_url")).toBe("https://example.com/success");
+        expect(params.get("failure_url")).toBe("https://example.com/fail");
+        expect(params.get("signature")).toBeDefined();
+      } finally {
+        spy.restore();
+      }
+    });
+
+    it("throws EsewaInitiationError on non-redirect non-OK response", async () => {
+      const spy = mockFetchText("Bad Request", 400);
+
+      try {
+        await expect(
+          client.initiatePayment({
+            amount: 100,
+            transactionId: "order-fail",
+          }),
+        ).rejects.toBeInstanceOf(EsewaInitiationError);
+      } finally {
+        spy.restore();
+      }
+    });
+
+    it("throws EsewaValidationError when no successUrl anywhere", async () => {
+      const noUrlClient = new EsewaClient({
+        merchantCode: "TEST",
+        secretKey: "key",
+        environment: "sandbox",
+      });
+
+      await expect(
+        noUrlClient.initiatePayment({
+          amount: 100,
+          transactionId: "t1",
+        }),
+      ).rejects.toBeInstanceOf(EsewaValidationError);
+    });
+
+    it("uses per-request URLs over config URLs", async () => {
+      const spy = mockFetchRedirect("https://rc-epay.esewa.com.np/pay");
+
+      try {
+        await client.initiatePayment({
+          amount: 100,
+          transactionId: "order-url-override",
+          successUrl: "https://custom.com/ok",
+          failureUrl: "https://custom.com/fail",
+        });
+
+        const params = new URLSearchParams(spy.body!);
+        expect(params.get("success_url")).toBe("https://custom.com/ok");
+        expect(params.get("failure_url")).toBe("https://custom.com/fail");
+      } finally {
+        spy.restore();
+      }
+    });
+
+    it("throws EsewaValidationError for zero amount", async () => {
+      await expect(
+        client.initiatePayment({
+          amount: 0,
+          transactionId: "t1",
+        }),
+      ).rejects.toBeInstanceOf(EsewaValidationError);
+    });
+
+    it("throws EsewaValidationError for empty transactionId", async () => {
+      await expect(
+        client.initiatePayment({
+          amount: 100,
+          transactionId: "",
+        }),
+      ).rejects.toBeInstanceOf(EsewaValidationError);
     });
   });
 

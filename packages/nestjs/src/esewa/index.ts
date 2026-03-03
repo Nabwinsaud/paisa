@@ -7,6 +7,7 @@ export type {
   EsewaEnvironment,
   EsewaPaymentRequest,
   EsewaPaymentOptions,
+  EsewaInitiateResponse,
   EsewaVerifyRequest,
   EsewaVerifyResponse,
   EsewaPaymentStatus,

@@ -12,11 +12,20 @@ export class EsewaService {
   constructor(private readonly client: EsewaClient) {}
 
   /**
+   * Initiate a payment by POSTing to eSewa server-side.
+   * Returns a `paymentUrl` — redirect the user there to complete payment.
+   * No HTML form needed.
+   */
+  async initiatePayment(req: EsewaPaymentRequest) {
+    return this.client.initiatePayment(req);
+  }
+
+  /**
    * Generate the eSewa payment form data (action URL + hidden fields).
    * Use the returned `actionUrl` and `payload` to build a form that POSTs to eSewa.
    * Pass `{ html: true }` in options to also get a ready-to-render HTML form snippet.
    */
-  initiatePayment(req: EsewaPaymentRequest, options?: EsewaPaymentOptions) {
+  getPaymentFormData(req: EsewaPaymentRequest, options?: EsewaPaymentOptions) {
     return this.client.getPaymentFormData(req, options);
   }
 

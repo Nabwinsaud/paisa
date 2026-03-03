@@ -4,6 +4,7 @@ export {
   EsewaSignatureMismatchError,
   EsewaVerificationError,
   EsewaValidationError,
+  EsewaInitiationError,
   EsewaStatusCheckError,
 } from "./errors.js";
 export type {
@@ -11,6 +12,7 @@ export type {
   EsewaEnvironment,
   EsewaPaymentRequest,
   EsewaPaymentOptions,
+  EsewaInitiateResponse,
   EsewaVerifyRequest,
   EsewaVerifyResponse,
   EsewaPaymentStatus,

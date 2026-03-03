@@ -14,7 +14,7 @@
 
 | Gateway | Status | What it does |
 |---------|--------|--------------|
-| **eSewa** | Supported | HMAC-SHA256 signed form payloads, base64 callback verification |
+| **eSewa** | Supported | HMAC-SHA256 signed form payloads, server-side initiation, base64 callback verification |
 | **Khalti** | Supported | Server-to-server initiation via API, pidx-based lookup verification |
 
 If you use NestJS, install `@nabwin/paisa-nestjs` instead -- it wraps this core SDK in proper NestJS dynamic modules with `forRoot()` / `forRootAsync()` patterns.
@@ -27,7 +27,7 @@ You can. But you will end up writing the same boilerplate every time:
 - eSewa amounts are **strings**. Forget to cast? API rejects silently.
 - eSewa initiation returns a **302 redirect**, not JSON. Miss that? You get an HTML page back.
 - eSewa callback data is **base64-encoded JSON** with an HMAC signature you must verify. Skip it? You accept tampered payments.
-- Khalti sandbox uses `dev.khalti.com`, production uses `khalti.com`. Hardcode the wrong one? Payments fail in prod.
+- Khalti sandbox uses `a.khalti.com`, production uses `khalti.com`. Hardcode the wrong one? Payments fail in prod.
 
 This SDK handles all of it. You pass clean TypeScript objects, you get clean TypeScript objects back.
 
@@ -37,10 +37,46 @@ This SDK handles all of it. You pass clean TypeScript objects, you get clean Typ
 
 This is a monorepo. Two packages are published to npm:
 
-| Package | npm | Description |
-|---------|-----|-------------|
-| [`@nabwin/paisa`](./packages/core) | `bun add @nabwin/paisa` | Core SDK -- works with any framework or no framework |
-| [`@nabwin/paisa-nestjs`](./packages/nestjs) | `bun add @nabwin/paisa-nestjs` | NestJS adapter -- dynamic modules wrapping the core |
+| Package | Description |
+|---------|-------------|
+| [`@nabwin/paisa`](./packages/core) | Core SDK -- works with any framework or no framework |
+| [`@nabwin/paisa-nestjs`](./packages/nestjs) | NestJS adapter -- dynamic modules wrapping the core |
+
+### Install
+
+```bash
+bun add @nabwin/paisa
+```
+
+```bash
+npm install @nabwin/paisa
+```
+
+```bash
+pnpm add @nabwin/paisa
+```
+
+```bash
+yarn add @nabwin/paisa
+```
+
+For NestJS:
+
+```bash
+bun add @nabwin/paisa-nestjs
+```
+
+```bash
+npm install @nabwin/paisa-nestjs
+```
+
+```bash
+pnpm add @nabwin/paisa-nestjs
+```
+
+```bash
+yarn add @nabwin/paisa-nestjs
+```
 
 ### Subpath imports
 
@@ -65,17 +101,7 @@ Both ESM (`import`) and CommonJS (`require`) are supported. TypeScript declarati
 
 ## Quick Start
 
-### Install
-
-```bash
-# Core SDK (any framework)
-bun add @nabwin/paisa
-
-# NestJS adapter (includes core as dependency)
-bun add @nabwin/paisa-nestjs
-```
-
-### eSewa -- Form-based payment
+### eSewa -- Payment initiation
 
 ```ts
 import { EsewaClient } from "@nabwin/paisa/esewa";
@@ -84,30 +110,39 @@ const esewa = new EsewaClient({
   merchantCode: "EPAYTEST",
   secretKey: "8gBm/:&EnhH.1/q",
   environment: "sandbox",
-});
-
-// 1. Generate signed form data
-const form = esewa.getPaymentFormData({
-  amount: 100,
-  totalAmount: 100,
-  transactionUUID: "order-abc-123",
   successUrl: "https://yoursite.com/payment/success",
   failureUrl: "https://yoursite.com/payment/failure",
 });
 
+// Option 1: Server-side initiation (recommended)
+// POSTs to eSewa and returns a paymentUrl — redirect the user there
+const result = await esewa.initiatePayment({
+  amount: 100,
+  transactionId: "order-abc-123",
+});
+
+// result.paymentUrl -> redirect user here
+
+// Option 2: Get form data (build your own HTML form)
+const form = esewa.getPaymentFormData({
+  amount: 100,
+  transactionId: "order-abc-123",
+});
+
 // form.actionUrl  -> "https://rc-epay.esewa.com.np/api/epay/main/v2/form"
 // form.payload    -> { amount, signature, signed_field_names, ... }
-// POST this as an HTML form or via fetch
 
-// 2. Verify callback (after eSewa redirects back with ?data=base64token)
-const result = await esewa.verifyPayment({
+// Verify callback (after eSewa redirects back with ?data=base64token)
+const verification = await esewa.verifyPayment({
   encodedData: req.query.data, // base64 string from eSewa redirect
 });
 
-// result.status          -> "COMPLETE"
-// result.transactionUUID -> "order-abc-123"
-// result.totalAmount     -> 100
+if (verification.isComplete) {
+  // Payment verified -- fulfill the order
+}
 ```
+
+`totalAmount` is always auto-computed: `amount + taxAmount + serviceCharge + deliveryCharge`.
 
 ### Khalti -- API-based payment
 
@@ -136,8 +171,9 @@ const result = await khalti.verifyPayment({
   pidx: req.query.pidx,
 });
 
-// result.status      -> "Completed"
-// result.totalAmount -> 10000 (in paisa)
+if (result.isComplete) {
+  // Payment verified -- fulfill the order
+}
 ```
 
 ### NestJS
@@ -153,6 +189,8 @@ import { KhaltiModule } from "@nabwin/paisa-nestjs/khalti";
       merchantCode: process.env.ESEWA_MERCHANT_CODE,
       secretKey: process.env.ESEWA_SECRET_KEY,
       environment: "sandbox",
+      successUrl: "https://yoursite.com/payment/success",
+      failureUrl: "https://yoursite.com/payment/failure",
     }),
     KhaltiModule.forRoot({
       secretKey: process.env.KHALTI_SECRET_KEY,
@@ -174,6 +212,14 @@ export class PaymentController {
     private readonly esewa: EsewaService,
     private readonly khalti: KhaltiService,
   ) {}
+
+  @Post("esewa")
+  async payWithEsewa() {
+    return this.esewa.initiatePayment({
+      amount: 100,
+      transactionId: "order-abc-123",
+    });
+  }
 }
 ```
 
@@ -263,7 +309,7 @@ bun changeset publish      # Publish to npm
 
 | Gateway | Initiation | Verification | Refund | Webhook |
 |---------|-----------|-------------|--------|---------|
-| eSewa | HMAC-signed form POST | Base64 callback + status API | Manual (dashboard) | -- |
+| eSewa | HMAC-signed form POST + server-side initiation | Base64 callback + status API | Manual (dashboard) | -- |
 | Khalti | Server-to-server API | pidx lookup API | Manual (dashboard) | -- |
 | Fonepay | Planned | Planned | -- | -- |
 | ConnectIPS | Planned | Planned | -- | -- |

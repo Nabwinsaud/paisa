@@ -17,8 +17,15 @@ bun add @nabwin/paisa
 ```
 
 ```bash
-# or with npm/pnpm/yarn
 npm install @nabwin/paisa
+```
+
+```bash
+pnpm add @nabwin/paisa
+```
+
+```bash
+yarn add @nabwin/paisa
 ```
 
 ---
@@ -46,12 +53,10 @@ Both ESM and CommonJS are supported. TypeScript declarations (`.d.ts`) are inclu
 
 ## eSewa
 
-eSewa uses HMAC-SHA256 signatures. The flow:
+eSewa uses HMAC-SHA256 signatures. Two ways to initiate payment:
 
-1. Your server generates a signed form payload
-2. You POST it to eSewa (HTML form or server-side fetch)
-3. eSewa redirects the user back to your `successUrl` with a base64-encoded token
-4. Your server decodes the token, verifies the signature, and confirms the payment
+- **`initiatePayment()`** -- POSTs to eSewa server-side, returns a `paymentUrl` you redirect the user to. No HTML form needed.
+- **`getPaymentFormData()`** -- Returns the signed payload so you can build your own HTML form or handle the POST yourself.
 
 ### Setup
 
@@ -62,38 +67,55 @@ const esewa = new EsewaClient({
   merchantCode: "EPAYTEST",          // Your eSewa merchant code
   secretKey: "8gBm/:&EnhH.1/q",     // Your eSewa secret key
   environment: "sandbox",            // "sandbox" or "production"
+  successUrl: "https://yoursite.com/payment/success",
+  failureUrl: "https://yoursite.com/payment/failure",
 });
 ```
 
-### Initiate Payment
+### Initiate Payment (recommended)
+
+Server-side initiation. POSTs to eSewa and returns the redirect URL directly:
+
+```ts
+const result = await esewa.initiatePayment({
+  amount: 500,                                    // Item price in NPR
+  transactionId: "order-abc-123",                 // Your unique order ID
+  successUrl: "https://yoursite.com/pay/success",  // Required (or set in config)
+  failureUrl: "https://yoursite.com/pay/failure",  // Required (or set in config)
+});
+
+// result.paymentUrl -> "https://rc-epay.esewa.com.np/..."
+// Redirect the user to result.paymentUrl
+```
+
+`totalAmount` is auto-computed: `amount + taxAmount + serviceCharge + deliveryCharge`. No need to pass it.
+
+### Get Form Data (alternative)
+
+If you prefer building your own HTML form:
 
 ```ts
 const form = esewa.getPaymentFormData({
-  amount: 500,                                    // Item price in NPR
-  totalAmount: 500,                               // Total including tax
-  transactionUUID: "order-abc-123",                // Your unique order ID
-  successUrl: "https://yoursite.com/pay/success",  // eSewa redirects here on success
-  failureUrl: "https://yoursite.com/pay/failure",  // eSewa redirects here on failure
+  amount: 500,
+  transactionId: "order-abc-123",
+  successUrl: "https://yoursite.com/pay/success",
+  failureUrl: "https://yoursite.com/pay/failure",
 });
 
-// Returns:
-// {
-//   actionUrl: "https://rc-epay.esewa.com.np/api/epay/main/v2/form",
-//   payload: {
-//     amount: "500",
-//     total_amount: "500",
-//     transaction_uuid: "order-abc-123",
-//     product_code: "EPAYTEST",
-//     signature: "base64-hmac-sha256...",
-//     signed_field_names: "total_amount,transaction_uuid,product_code",
-//     success_url: "...",
-//     failure_url: "...",
-//     ...
-//   }
-// }
+// form.actionUrl  -> "https://rc-epay.esewa.com.np/api/epay/main/v2/form"
+// form.payload    -> { amount, signature, signed_field_names, ... }
 ```
 
-Render this as an HTML form or POST it server-side. eSewa will redirect the user to their payment page.
+Or get a ready-to-render HTML form:
+
+```ts
+const form = esewa.getPaymentFormData(
+  { amount: 500, transactionId: "order-abc-123" },
+  { html: true },
+);
+
+// form.html -> '<form method="POST" action="...">...</form>'
+```
 
 ### Verify Payment
 
@@ -104,18 +126,14 @@ const result = await esewa.verifyPayment({
   encodedData: req.query.data,  // The base64 string from eSewa's redirect
 });
 
-// Returns:
-// {
-//   status: "COMPLETE",            // Payment status
-//   refId: "0EXWOK",               // eSewa's reference ID
-//   transactionUUID: "order-abc-123",
-//   totalAmount: 500,
-//   raw: { ... }                   // Full decoded response
-// }
-
-if (result.status === "COMPLETE") {
+if (result.isComplete) {
   // Payment verified -- fulfill the order
 }
+
+// result.status        -> "COMPLETE"
+// result.refId         -> "0EXWOK"
+// result.transactionId -> "order-abc-123"
+// result.totalAmount   -> 500
 ```
 
 The SDK automatically:
@@ -123,16 +141,41 @@ The SDK automatically:
 - Verifies the HMAC-SHA256 signature (throws `EsewaSignatureMismatchError` if tampered)
 - Returns typed, parsed data
 
+### Check Transaction Status
+
+Server-to-server status check, independent of the callback:
+
+```ts
+const status = await esewa.checkTransactionStatus({
+  transactionId: "order-abc-123",
+  totalAmount: 500,
+});
+
+if (status.isComplete) {
+  // Payment confirmed server-side
+}
+```
+
 ### Error Handling
 
 ```ts
-import { EsewaSignatureMismatchError } from "@nabwin/paisa/esewa";
+import {
+  EsewaSignatureMismatchError,
+  EsewaInitiationError,
+  EsewaValidationError,
+} from "@nabwin/paisa/esewa";
 
 try {
-  const result = await esewa.verifyPayment({ encodedData: data });
+  const result = await esewa.initiatePayment({ ... });
 } catch (err) {
+  if (err instanceof EsewaValidationError) {
+    // Invalid input (missing URL, bad amount, etc.)
+  }
+  if (err instanceof EsewaInitiationError) {
+    // eSewa rejected the request or network error
+  }
   if (err instanceof EsewaSignatureMismatchError) {
-    // Signature mismatch -- possible tampering. Do NOT fulfill the order.
+    // Signature mismatch during verification -- possible tampering
   }
 }
 ```
@@ -175,14 +218,8 @@ const payment = await khalti.initiatePayment({
   },
 });
 
-// Returns:
-// {
-//   pidx: "bZQLD9wRVWo4CdESSfDEMo",
-//   paymentUrl: "https://pay.khalti.com/?pidx=bZQLD9wRVWo4CdESSfDEMo",
-//   expiresAt: "2025-01-01T00:00:00Z"
-// }
-
-// Redirect user to payment.paymentUrl
+// payment.paymentUrl -> redirect user here
+// payment.pidx       -> store for verification
 ```
 
 ### Verify Payment
@@ -194,17 +231,7 @@ const result = await khalti.verifyPayment({
   pidx: req.query.pidx,  // From Khalti's redirect
 });
 
-// Returns:
-// {
-//   pidx: "bZQLD9wRVWo4CdESSfDEMo",
-//   status: "Completed",
-//   totalAmount: 10000,          // In paisa
-//   transactionId: "abcdef123",  // Khalti's transaction ID
-//   purchaseOrderId: "order-abc-123",
-//   raw: { ... }
-// }
-
-if (result.status === "Completed") {
+if (result.isComplete) {
   // Payment verified -- fulfill the order
 }
 ```
@@ -216,7 +243,7 @@ if (result.status === "Completed") {
 | Gateway | Sandbox | Production |
 |---------|---------|------------|
 | eSewa | `rc-epay.esewa.com.np` | `epay.esewa.com.np` |
-| Khalti | `dev.khalti.com` | `khalti.com` |
+| Khalti | `a.khalti.com` | `khalti.com` |
 
 Set `environment: "sandbox"` for testing, `environment: "production"` for live.
 
@@ -228,8 +255,10 @@ Set `environment: "sandbox"` for testing, `environment: "production"` for live.
 
 | Method | Description |
 |--------|-------------|
-| `getPaymentFormData(req)` | Generates HMAC-signed form payload for eSewa |
+| `initiatePayment(req)` | POSTs to eSewa, returns `paymentUrl` for redirect |
+| `getPaymentFormData(req, options?)` | Generates HMAC-signed form payload for eSewa |
 | `verifyPayment(req)` | Decodes + verifies base64 callback token |
+| `checkTransactionStatus(req)` | Server-side transaction status check |
 
 ### KhaltiClient
 
